@@ -6,8 +6,8 @@
 <title>触动的依恋</title>
 <style>
 :root{
-  --pw: min(43vw, 430px);
-  --ph: min(62vh, 580px);
+  --ph: min(76vh, 720px);
+  --pw: min(calc(var(--ph) * 0.5586), 46vw);
   --paper:#fffaf4;
   --cover:#bb6684;
   --segN: 9;
@@ -209,7 +209,10 @@ body{
   background-repeat:no-repeat;
   background-size:100% 100%;
   pointer-events:none;z-index:1;
+  -webkit-backface-visibility:hidden;backface-visibility:hidden;
 }
+/* WebKit 在 3D 翻转时会把正面的内容留在背面，翻过去必须彻底藏掉 */
+.sheet.turned .face.front .pl{visibility:hidden}
 .shade{z-index:5}
 .pnum{z-index:6}
 .pc{
@@ -223,7 +226,7 @@ body{
 .shot{width:var(--sw,44%);flex:0 0 auto;position:relative;transform:rotate(-2.2deg);pointer-events:auto}
 .frame{background:#fffdf8;padding:4px 4px 12px;border-radius:1px;
   box-shadow:0 5px 13px rgba(125,82,74,.22),0 1px 2px rgba(125,82,74,.20)}
-.ph{position:relative;aspect-ratio:4/5;overflow:hidden;background:#efe7e2}
+.ph{position:relative;aspect-ratio:var(--ar, 4/5);overflow:hidden;background:#efe7e2}
 .track{display:flex;height:100%;width:100%;
   transition:transform .44s cubic-bezier(.32,.78,.28,1);will-change:transform}
 .track img{flex:0 0 100%;width:100%;height:100%;object-fit:cover;display:block;
@@ -317,10 +320,12 @@ body{
 .shots .it b{position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;
   background:rgba(60,40,45,.55);color:#fff;font-size:10px;line-height:16px;text-align:center;
   font-weight:400;cursor:pointer}
-.ed-add{display:inline-block;padding:7px 16px;border-radius:999px;cursor:pointer;
+.ed-add{display:inline-block;position:relative;overflow:hidden;padding:7px 16px;border-radius:999px;cursor:pointer;
   font-size:11.5px;letter-spacing:.12em;color:#b06480;
   border:1px dashed rgba(193,116,143,.55);background:rgba(255,245,248,.7)}
+.ed-add .fin{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:0}
 .ed-add:hover{background:rgba(250,232,239,.9)}
+.ed-tip2{margin-top:8px;font-size:10px;color:#c0a0ac;letter-spacing:.04em}
 
 .ed-date{margin-bottom:8px}
 .ed-date input,.ed-box textarea{
@@ -347,6 +352,15 @@ body{
 .ed-del:hover{color:#a2607a;border-color:rgba(193,116,143,.6)!important}
 
 /* ================= v7 · 页码可改 + 相册展示柜 ================= */
+/* 翻过去的纸必须整面藏住：preserve-3d 下子元素不会跟着父级 backface 一起消失 */
+.face{transform-style:flat;-webkit-transform-style:flat}
+.pl,.shade,.pnum{backface-visibility:hidden;-webkit-backface-visibility:hidden}
+/* WebKit 兜底：按每段实际角度显式隐藏背对镜头的面 */
+.seg > .face.front{visibility:visible}
+.seg.fback > .face.front{visibility:hidden}
+.seg > .face.back{visibility:hidden}
+.seg.fback > .face.back{visibility:visible}
+
 .pnum{bottom:13px;padding:3px 0;border-radius:999px;cursor:pointer;
   -webkit-user-select:none;user-select:none;transition:background .22s,color .22s}
 .pnum:hover{color:rgba(178,96,124,.95);background:rgba(255,255,255,.58)}
@@ -430,7 +444,8 @@ body{
     <div class="ed-step" data-step="2" hidden>
       <div class="ed-lb">二 · 放照片<span class="ed-tip">可以不放</span></div>
       <div class="shots" id="shots"></div>
-      <label class="ed-add"><input type="file" id="fileIn" accept="image/*" multiple hidden>＋ 加照片</label>
+      <label class="ed-add">＋ 加照片<input type="file" id="fileIn" accept="image/*" multiple class="fin"></label>
+      <div class="ed-tip2">也可以直接把照片拖进这个框</div>
     </div>
 
     <div class="ed-step" data-step="3" hidden>
@@ -519,7 +534,7 @@ function paintZ(){
 }
 function sync(){
   while (N < cur + 4){ makeSheet(N); N++; }
-  for (var i=0;i<N;i++) sheets[i].classList.toggle('turned', i < cur);
+  for (var i=0;i<N;i++){ sheets[i].classList.toggle('turned', i < cur); refreshFacing(sheets[i]); }
   book.classList.toggle('opened', opened);
   cover.classList.toggle('opened', opened);
   paintZ();
@@ -556,11 +571,24 @@ function play(a){
 
 /* ---- 弧线：N 段等角度递增，拼出圆弧（不是折线） ---- */
 function segsOf(sh){ return sh.querySelectorAll('.seg'); }
+/* WebKit 里 backface-visibility 在嵌套 3D 下不生效：
+   按每段的实际角度显式隐藏背对镜头的那个面 */
+function setFacing(seg, isBack){
+  var v = isBack ? '1' : '0';
+  if (seg.dataset.fb === v) return;
+  seg.dataset.fb = v;
+  seg.classList.toggle('fback', isBack);
+}
+function refreshFacing(sh){
+  var a = segsOf(sh), t = sh.classList.contains('turned');
+  for (var i = 0; i < a.length; i++) setFacing(a[i], t);
+}
 function clearSegs(sh){
   var a = segsOf(sh);
   for (var i=0;i<a.length;i++){ a[i].style.transform=''; }
   var sd = sh.querySelectorAll('.shade');
   for (var i=0;i<sd.length;i++) sd[i].style.opacity = 0;
+  refreshFacing(sh);
 }
 function setCurl(sh, theta, p){
   p = Math.max(0, Math.min(1, p));
@@ -573,6 +601,8 @@ function setCurl(sh, theta, p){
     var abs = a0 - step * k;
     segs[k].style.transform = 'rotateY(' + (abs - prev).toFixed(3) + 'deg)';
     prev = abs;
+    var d = Math.abs(abs) % 360;
+    setFacing(segs[k], d > 90 && d < 270);
   }
   // 沿弧线渐暗，段段衔接，不出条纹
   var base = Math.sin(p * Math.PI);
@@ -736,10 +766,10 @@ function tick(now){
          + 6   * Math.sin(t * TAU / 7.9  + 1.2)
          + 3.5 * Math.sin(t * TAU / 21.3 + 2.4);
   var rz = 0.55 * Math.sin(t * TAU / 17.1 + 0.6) + 0.18 * Math.sin(t * TAU / 9.7);
-  var rx = 18 + 1.8 * Math.sin(t * TAU / 14.3 + 2.0);
+  var rx = 4 + 1.2 * Math.sin(t * TAU / 14.3 + 2.0);
   floatEl.style.transform =
     'perspective(2600px) translateY(' + y.toFixed(2) + 'px)' +
-    ' rotateX(' + rx.toFixed(3) + 'deg) rotateY(-5deg) rotateZ(' + rz.toFixed(3) + 'deg)';
+    ' rotateX(' + rx.toFixed(3) + 'deg) rotateY(-2deg) rotateZ(' + rz.toFixed(3) + 'deg)';
   var k = 1 - y / 28;
   cast.style.transform = 'scaleX(' + k.toFixed(3) + ') scaleY(' + (0.86 + (k-1)*0.5).toFixed(3) + ')';
   cast.style.opacity = (0.50 + y / 80).toFixed(3);
@@ -818,8 +848,20 @@ function buildPC(pg, d){
     var frame = el('div','frame');
     var ph = el('div','ph');
     var track = el('div','track');
-    for (var i=0;i<d.photos.length;i++){
-      var im = new Image(); im.src = d.photos[i]; im.alt = ''; track.appendChild(im);
+    for (var pi2=0; pi2<d.photos.length; pi2++){
+      (function(idx){
+        var im = new Image(); im.alt = '';
+        im.onload = function(){
+          if (idx === 0 && im.naturalWidth && im.naturalHeight){
+            var r = im.naturalWidth / im.naturalHeight;
+            r = Math.max(0.6, Math.min(1.8, r));      /* 极端长条就轻微裁一点，不做拉伸 */
+            ph.style.setProperty('--ar', r.toFixed(4));
+            refine(pg);
+          }
+        };
+        im.src = d.photos[idx];
+        track.appendChild(im);
+      })(pi2);
     }
     ph.appendChild(track);
 
@@ -872,6 +914,16 @@ function fitText(pg){
     if (probe.scrollHeight <= probe.clientHeight + 1){ pick = sizes[i]; break; }
   }
   for (var k=0;k<all.length;k++) all[k].style.fontSize = pick + 'px';
+}
+
+/* 图片加载完、比例变了以后重新排版一次 */
+var refineT = {};
+function refine(pg){
+  clearTimeout(refineT[pg]);
+  refineT[pg] = setTimeout(function(){
+    if (data[pg] && data[pg].photos && data[pg].photos.length > 1) setSlide(pg, slide[pg] || 0);
+    fitText(pg);
+  }, 70);
 }
 
 function renderPage(pg){
@@ -1039,6 +1091,7 @@ function openEdPage(pg){
   ed.classList.add('on');
 }
 window.__openPage = openEdPage;
+window.__renderPage = renderPage;
 
 function closeEd(){ ed.classList.remove('on'); }
 
@@ -1093,16 +1146,34 @@ function shrink(file, cb){
   fr.readAsDataURL(file);
 }
 
-fileIn.addEventListener('change', function(){
-  var fs = fileIn.files; if (!fs || !fs.length) return;
-  var list = Array.prototype.slice.call(fs), left = list.length;
+fileIn.addEventListener('change', function(){ addFiles(fileIn.files); });
+
+function addFiles(fs){
+  if (!fs || !fs.length) return;
+  var list = Array.prototype.slice.call(fs).filter(function(f){
+    return !f.type || /^image\//i.test(f.type);
+  });
+  if (!list.length) return;
+  var left = list.length;
   list.forEach(function(f){
     shrink(f, function(url){
       if (url) draft.photos.push(url);
       if (--left === 0){ paintShots(); fileIn.value = ''; }
     });
   });
+}
+
+/* 拖进来也能加：万一选择器弹不出来，这条还能用 */
+var edBox = ed.querySelector('.ed-box');
+['dragenter', 'dragover'].forEach(function(t){
+  edBox.addEventListener(t, function(e){ e.preventDefault(); e.stopPropagation(); });
 });
+edBox.addEventListener('drop', function(e){
+  e.preventDefault(); e.stopPropagation();
+  if (e.dataTransfer && e.dataTransfer.files) addFiles(e.dataTransfer.files);
+});
+document.addEventListener('dragover', function(e){ e.preventDefault(); });
+document.addEventListener('drop', function(e){ e.preventDefault(); });
 
 document.getElementById('newBtn').addEventListener('click', function(){ openEdPage(2*cur + 1); });
 
